@@ -1,0 +1,56 @@
+Bu projede ana mantık şu. ->Bir de api düşünelim.Bu API ya bi istek  atıyoruz ve kayıt yoksa yeni bir kayıt oluşturuyor.Bu kaydın var olup olmadığını kontrol ederken de bir tane field kullanıyor.
+Bu api ya parallede sorgu geldği zaman , veri tabanında duplicate kayıtlar oluşabilir mi ?Bu sorunları inceleyeceğiz.
+
+spring init --build=gradle --dependencies=data-jpa,lombok,mysql,data-rest,h2,web --packaging=jar --type=gradle-project   tx-concurency.zip
+
+$ unzip tx-concurency.zip -d tx-concurency -->zip çıkarma
+cd tx-concurency
+idea.
+
+
+curl -XPOST -H 'Content-Type:application/json' -d '{"uuid":"4324f6b9-9db3-4aad-b945-a7c5e03e5b34","amount:23}' http://localhost:8080/invoice
+
+Biz concurent requestlerde çoklu bi istek gönderdiğimizde aynı anda iki request de , "uuid":"4324f6b9-9db3-4aad-b945-a7c5e03e5b334" ile çoklu istek gönderdiğimizde , duplicate kayıtlar oluşabilir.
+
+
+Bunun içinde Jmeteri kullandık.Jmeter de NumberOfThreadi:100 seçtik ve periodu 1 seçerek aynı anda 100 tane request gönderdik.Ve veri tabanında ,
+
+
+ID  	AMOUNT  	UUID  
+8	123	4324f6b9-9db3-4aad-b945-a7c5e03e5b47
+9	123	4324f6b9-9db3-4aad-b945-a7c5e03e5b47
+10	123	4324f6b9-9db3-4aad-b945-a7c5e03e5b47
+11	123	4324f6b9-9db3-4aad-b945-a7c5e03e5b47
+
+Aynı zamandan komut satırıylada yapabiliriz.Öncelikle bir tane json dosyası oluşturacağız ve içerisine payloadı ekleriz.
+ab-> apache bencmark
+İsmi payload.json olsun.Ardından ->  ab  -p payload.json -T application/json -n 10000 -c 100 http://localhost:8080/invoices   -->  payload.json dosyasını verdik 10000 tane request gönderdik ve paralelde 100 kişi ve endpoint.
+
+
+
+bu şekilde duplicate kayıtlar attı.findInvoiceByUuid metodunda 1 tane data dönmesi gerekirken , 4 tane dönüyor ve patlıyor.
+
+Çözüm:
+
+upsert metoduna Transactional tanımı yaparız.Burada isolation tanımı yaparız.Isolation_read_uncommited kirli datayı okuma riski var ve gücü en az.En güçlüsü ise serializable.
+h2 db de bu çözümü göremiyebiliriz.mysql üzerinden yapalım.->   @Transactional(isolation = Isolation.SERIALIZABLE)  @Lock(LockModeType.PESSIMISTIC_WRITE)
+İzolaasyonunun en yüksek derecesi -> SERIALIZABLE, PESSIMISTIC locklar dbden bir değer okuacağın zaman dbyi kitliyor.Bu latency getirir ama verinin düzgün alınmasını sağlar.
+
+using password yes problem:mysqld --defaults-file="C:\ProgramData\MySQL\MySQL Server 8.0\\my.ini" --init-file=C:\\mysql-init.txt --console
+Ardından mysql serverı çalıştır.
+
+
+H2 database application.properties config:
+
+spring.datasource.url=jdbc:h2:mem:testdb
+spring.datasource.driverClassName=org.h2.Driver
+spring.datasource.username=sa
+spring.datasource.password=password
+spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+spring.h2.console.enabled=true
+
+
+
+
+
+
